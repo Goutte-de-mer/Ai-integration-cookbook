@@ -62,7 +62,7 @@ Step-by-step explanation of the prompt and parameters.
 
 ## Code Style
 
-- TypeScript for all project code
+- JavaScript for all project code
 - Tailwind for styling — no custom CSS unless unavoidable
 - Components in PascalCase, utilities in camelCase
 - Keep files small — one component per file

@@ -1,7 +1,5 @@
-import { ModelDefinition } from "@/types";
-
 /** Supported models with pricing (USD per 1K tokens, as of 2024). */
-export const MODELS: ModelDefinition[] = [
+export const MODELS = [
   {
     id: "gpt-4",
     name: "GPT-4",
