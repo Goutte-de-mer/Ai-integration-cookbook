@@ -1,8 +1,9 @@
 import { getCategoryById, CATEGORIES } from "@/lib/categories";
+import { getRecipes } from "@/lib/recipes";
+import RecipeCard from "@/components/RecipeCard";
 
 /**
  * /categories/[slug] — lists all recipes belonging to a category.
- * Recipes will be loaded from MDX once the MDX pipeline is in place.
  */
 
 export function generateStaticParams() {
@@ -17,6 +18,8 @@ export default async function CategoryPage({ params }) {
     return <p>Category not found.</p>;
   }
 
+  const recipes = getRecipes(slug);
+
   return (
     <div>
       <div className="mb-6">
@@ -25,10 +28,17 @@ export default async function CategoryPage({ params }) {
         <p className="text-gray-600">{category.description}</p>
       </div>
 
-      {/* TODO: load recipes filtered by category, render RecipeCard list */}
-      <p className="text-sm text-gray-400">
-        No recipes yet. Check back once the MDX pipeline is wired up.
-      </p>
+      {recipes.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {recipes.map((recipe) => (
+            <RecipeCard key={recipe.slug} recipe={recipe} />
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-400">
+          No recipes in this category yet.
+        </p>
+      )}
     </div>
   );
 }
