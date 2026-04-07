@@ -1,7 +1,7 @@
 ---
 title: "Image Description"
 slug: "image-description"
-description: "Generate a text description of an image using a vision model."
+description: "Generate descriptive text from images using a vision model."
 category: "vision"
 difficulty: "intermediate"
 models: ["gpt-4"]
@@ -11,7 +11,19 @@ estimatedCostPer1kTokens: 0.03
 
 ## What This Does
 
-Sends an image to a vision-capable LLM and gets back a text description. Useful for accessibility (alt text), content indexing, image search, and automated cataloging.
+Send an image to a vision-capable LLM and get back a detailed text description of what the image contains. This enables accessibility features, image search, content moderation, and automated cataloging.
+
+### When to Use This
+
+- **Accessibility**: generating alt text for images on websites
+- **E-commerce**: auto-generating product descriptions from photos
+- **Content moderation**: detecting inappropriate or policy-violating images
+- **Search**: making images searchable by their content
+- **Data entry**: extracting information from receipts, screenshots, or diagrams
+
+### How It Compares to Traditional Approaches
+
+Traditional computer vision (image classification, object detection) requires labeled datasets and outputs fixed categories. Vision LLMs produce **free-form natural language descriptions** and can answer open-ended questions about images without any training.
 
 ## Code
 
@@ -23,81 +35,227 @@ import base64
 
 client = openai.OpenAI(api_key="YOUR_API_KEY")
 
-def describe_image(image_path):
-    with open(image_path, "rb") as f:
-        b64 = base64.standard_b64encode(f.read()).decode("utf-8")
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "user", "content": [
-                {"type": "text", "text": "Describe this image in detail. Include objects, colors, setting, and any text visible."},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-            ]}
-        ],
-        max_tokens=300
-    )
-    return response.choices[0].message.content
+def describe_image(image_url=None, image_path=None, prompt="Describe this image in detail."):
+    """
+    Describe an image using GPT-4 Vision.
+    Accepts either a URL or a local file path.
+    Returns the description string.
+    """
+    if image_path:
+        with open(image_path, "rb") as f:
+            base64_image = base64.b64encode(f.read()).decode("utf-8")
+        image_content = {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+        }
+    elif image_url:
+        image_content = {
+            "type": "image_url",
+            "image_url": {"url": image_url},
+        }
+    else:
+        raise ValueError("Provide either image_url or image_path")
 
-description = describe_image("photo.jpg")
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        image_content,
+                    ],
+                }
+            ],
+            max_tokens=500,
+        )
+        return response.choices[0].message.content
+    except openai.APIError as e:
+        print(f"API error: {e}")
+        return None
+
+
+# --- Example: describe from URL ---
+
+description = describe_image(
+    image_url="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg"
+)
 print(description)
+# Expected output (will vary):
+# "The image shows a tabby cat with green eyes sitting on a wooden surface.
+#  The cat has distinctive striped markings in brown and gray. Its ears are
+#  pointed upward and alert. The background appears to be a garden or outdoor
+#  setting with blurred greenery."
+
+
+# --- Example: describe from local file ---
+
+description = describe_image(image_path="./product-photo.jpg")
+print(description)
+
+
+# --- Example: custom prompt for alt text ---
+
+alt_text = describe_image(
+    image_url="https://example.com/photo.jpg",
+    prompt="Write a concise alt text for this image, suitable for screen readers. Maximum 125 characters.",
+)
+print(alt_text)
+# "Tabby cat with green eyes sitting on a wooden deck in a garden"
 ```
 
 ### Node.js
 
 ```javascript
 import OpenAI from "openai";
-import fs from "fs";
+import { readFileSync } from "fs";
 
 const client = new OpenAI({ apiKey: "YOUR_API_KEY" });
 
-async function describeImage(imagePath) {
-  const b64 = fs.readFileSync(imagePath, { encoding: "base64" });
+/**
+ * Describe an image using GPT-4 Vision.
+ * @param {Object} options
+ * @param {string} [options.imageUrl] - URL of the image.
+ * @param {string} [options.imagePath] - Local file path.
+ * @param {string} [options.prompt] - Custom prompt for the description.
+ * @returns {Promise<string|null>} The image description.
+ */
+async function describeImage({ imageUrl, imagePath, prompt = "Describe this image in detail." }) {
+  let imageContent;
 
-  const response = await client.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { role: "user", content: [
-        { type: "text", text: "Describe this image in detail. Include objects, colors, setting, and any text visible." },
-        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}` } },
-      ]},
-    ],
-    max_tokens: 300,
-  });
-  return response.choices[0].message.content;
+  if (imagePath) {
+    const base64 = readFileSync(imagePath).toString("base64");
+    imageContent = {
+      type: "image_url",
+      image_url: { url: `data:image/jpeg;base64,${base64}` },
+    };
+  } else if (imageUrl) {
+    imageContent = {
+      type: "image_url",
+      image_url: { url: imageUrl },
+    };
+  } else {
+    throw new Error("Provide either imageUrl or imagePath");
+  }
+
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            imageContent,
+          ],
+        },
+      ],
+      max_tokens: 500,
+    });
+    return response.choices[0].message.content;
+  } catch (error) {
+    console.error("API error:", error.message);
+    return null;
+  }
 }
 
-const description = await describeImage("photo.jpg");
+// --- Example usage ---
+
+const description = await describeImage({
+  imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg",
+});
 console.log(description);
 ```
 
 ### curl
 
 ```bash
-# First encode the image: base64 photo.jpg > photo_b64.txt
 curl https://api.openai.com/v1/chat/completions \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o",
     "messages": [
-      {"role": "user", "content": [
-        {"type": "text", "text": "Describe this image in detail."},
-        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQ..."}}
-      ]}
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "Describe this image in detail." },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg"
+            }
+          }
+        ]
+      }
     ],
-    "max_tokens": 300
+    "max_tokens": 500
   }'
+```
+
+### Expected API Response
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "The image shows a tabby cat with green eyes sitting on a wooden surface. The cat has distinctive striped markings in shades of brown and gray, with lighter fur on its chest. Its ears are pointed upward, suggesting alertness."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1118,
+    "completion_tokens": 52,
+    "total_tokens": 1170
+  }
+}
 ```
 
 ## How It Works
 
-1. The image is base64-encoded and sent inline with the prompt
-2. Vision models (GPT-4o, GPT-4 Vision) process both text and image simultaneously
-3. `max_tokens` controls description length
+1. **Multi-modal input**: the message contains both text (the prompt) and an image (as a URL or base64-encoded data)
+2. **GPT-4o** processes both modalities together, understanding spatial relationships, text in images, and visual context
+3. **The prompt controls the output style**: "describe in detail" vs. "write alt text" vs. "list all objects" produces very different responses
+4. **Image tokens**: the API counts image tokens based on resolution — higher detail costs more
+
+### Key Parameters
+
+| Parameter     | Value  | Why                                                     |
+|---------------|--------|---------------------------------------------------------|
+| `max_tokens`  | 500    | Descriptions rarely need more                           |
+| `model`       | gpt-4o | Vision-capable model. `gpt-4o-mini` is cheaper for simple descriptions |
+
+## Prompt Variations
+
+Different prompts for different use cases:
+
+| Use Case | Prompt |
+|----------|--------|
+| Alt text | "Write concise alt text for this image, max 125 characters" |
+| Product listing | "Describe this product for an e-commerce listing. Include color, material, and notable features" |
+| Content moderation | "Does this image contain inappropriate content? Reply with JSON: {safe: bool, reason: string}" |
+| OCR | "Read and transcribe all text visible in this image" |
+| Diagram analysis | "Explain what this diagram shows, including all labels and relationships" |
 
 ## Tips
 
-- For URLs, pass `{"url": "https://..."}` instead of base64
-- Resize large images before sending — API has size limits and larger images cost more
-- Be specific in the prompt: "describe the text in the image" vs. "describe the scene"
+- **Base64 vs URL**: URLs are faster (no upload overhead) but the image must be publicly accessible. Use base64 for private or local images
+- **Image size**: resize large images before sending — the API has a max size and charges more for higher resolution. 1024×1024 or smaller is usually enough
+- **Prompt specificity**: "Describe this image" gives a general overview. Be specific: "List all text visible", "What brand is shown", "How many people are present"
+- **Batch images**: you can send multiple images in one message for comparison: "Which product looks more premium?"
+- **Cost**: vision requests are more expensive than text-only — approximately 765 tokens for a 1024×1024 image at "auto" detail
+
+## Common Pitfalls
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| "I can't view images" error | Wrong model | Use `gpt-4o` or `gpt-4o-mini`, not `gpt-4` |
+| Very expensive requests | High-res images | Resize to 1024px max, or set `detail: "low"` |
+| Vague descriptions | Generic prompt | Be specific about what information you need |
+| Can't read small text | Low resolution | Use `detail: "high"` for text-heavy images |
+| Hallucinated text in image | Model guesses unreadable text | Cross-check OCR results, use "Only transcribe clearly visible text" |

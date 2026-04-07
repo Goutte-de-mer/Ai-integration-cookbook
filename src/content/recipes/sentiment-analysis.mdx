@@ -11,7 +11,19 @@ estimatedCostPer1kTokens: 0.03
 
 ## What This Does
 
-Analyzes text and returns a sentiment label (positive, negative, neutral) with an optional confidence score. Great for review analysis, social media monitoring, customer feedback processing.
+Analyzes text and returns a sentiment label (positive, negative, neutral) with a confidence score. Unlike simple keyword-based sentiment tools, LLMs understand sarcasm, context, and nuance.
+
+### When to Use This
+
+- Analyzing product reviews to track customer satisfaction
+- Monitoring social media mentions for brand sentiment
+- Processing customer feedback surveys
+- Triaging support tickets by urgency/frustration level
+- Analyzing employee engagement survey responses
+
+### How It Compares to Traditional Approaches
+
+Rule-based sentiment (VADER, TextBlob) is fast and free but fails on sarcasm, slang, and complex sentences. Fine-tuned models (BERT) are more accurate but need labeled training data. LLMs handle **nuance, sarcasm, and mixed sentiment** out of the box with zero training.
 
 ## Code
 
@@ -23,20 +35,67 @@ import json
 
 client = openai.OpenAI(api_key="YOUR_API_KEY")
 
-def analyze_sentiment(text):
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": 'Analyze the sentiment of the following text. Return JSON: {"sentiment": "positive"|"negative"|"neutral", "confidence": 0.0-1.0}. Return only valid JSON.'},
-            {"role": "user", "content": text}
-        ],
-        temperature=0
-    )
-    return json.loads(response.choices[0].message.content)
 
-result = analyze_sentiment("This product is absolutely fantastic, best purchase I've made all year!")
-print(result)
-# {"sentiment": "positive", "confidence": 0.95}
+def analyze_sentiment(text):
+    """
+    Analyze sentiment of text.
+    Returns dict with 'sentiment' (positive/negative/neutral) and 'confidence' (0-1).
+    """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Analyze the sentiment of the following text. "
+                        'Return JSON: {"sentiment": "positive"|"negative"|"neutral", '
+                        '"confidence": 0.0-1.0, "reasoning": "one sentence explanation"}. '
+                        "Return only valid JSON."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0,
+            max_tokens=150,
+        )
+        return json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError:
+        print("Warning: invalid JSON from model")
+        return None
+    except openai.APIError as e:
+        print(f"API error: {e}")
+        return None
+
+
+# --- Example usage ---
+
+reviews = [
+    "This product is absolutely fantastic, best purchase I've made all year!",
+    "Terrible experience. Waited 3 weeks for delivery and the item was broken.",
+    "It's okay. Does what it says, nothing special.",
+    "I love how they claim it's 'premium quality' — fell apart after two days.",
+]
+
+for review in reviews:
+    result = analyze_sentiment(review)
+    if result:
+        print(f"  {result['sentiment']:>8} ({result['confidence']:.0%}) | {review[:60]}...")
+        print(f"           Reason: {result['reasoning']}")
+        print()
+
+# Expected output:
+#  positive (95%) | This product is absolutely fantastic, best purchase I've ma...
+#           Reason: Strongly positive language with superlatives
+#
+#  negative (92%) | Terrible experience. Waited 3 weeks for delivery and the it...
+#           Reason: Describes negative experience with broken product and long wait
+#
+#   neutral (78%) | It's okay. Does what it says, nothing special....
+#           Reason: Lukewarm assessment with no strong positive or negative signal
+#
+#  negative (88%) | I love how they claim it's 'premium quality' — fell apart a...
+#           Reason: Sarcastic tone criticizing product quality
 ```
 
 ### Node.js
@@ -46,20 +105,40 @@ import OpenAI from "openai";
 
 const client = new OpenAI({ apiKey: "YOUR_API_KEY" });
 
+/**
+ * Analyze sentiment of text.
+ * @param {string} text - The text to analyze.
+ * @returns {Promise<{sentiment: string, confidence: number, reasoning: string}|null>}
+ */
 async function analyzeSentiment(text) {
-  const response = await client.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      { role: "system", content: 'Analyze the sentiment of the following text. Return JSON: {"sentiment": "positive"|"negative"|"neutral", "confidence": 0.0-1.0}. Return only valid JSON.' },
-      { role: "user", content: text },
-    ],
-    temperature: 0,
-  });
-  return JSON.parse(response.choices[0].message.content);
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content:
+            'Analyze the sentiment of the following text. Return JSON: {"sentiment": "positive"|"negative"|"neutral", "confidence": 0.0-1.0, "reasoning": "one sentence explanation"}. Return only valid JSON.',
+        },
+        { role: "user", content: text },
+      ],
+      temperature: 0,
+      max_tokens: 150,
+    });
+    return JSON.parse(response.choices[0].message.content);
+  } catch (error) {
+    console.error("Error:", error.message);
+    return null;
+  }
 }
 
-const result = await analyzeSentiment("Terrible experience, would not recommend.");
-console.log(result); // {"sentiment": "negative", "confidence": 0.92}
+// --- Example usage ---
+
+const result = await analyzeSentiment(
+  "I love how they claim it's 'premium quality' — fell apart after two days."
+);
+console.log(result);
+// { sentiment: "negative", confidence: 0.88, reasoning: "Sarcastic tone criticizing product quality" }
 ```
 
 ### curl
@@ -71,21 +150,91 @@ curl https://api.openai.com/v1/chat/completions \
   -d '{
     "model": "gpt-4",
     "messages": [
-      {"role": "system", "content": "Analyze the sentiment of the following text. Return JSON: {\"sentiment\": \"positive\"|\"negative\"|\"neutral\", \"confidence\": 0.0-1.0}. Return only valid JSON."},
-      {"role": "user", "content": "This product is absolutely fantastic!"}
+      {
+        "role": "system",
+        "content": "Analyze the sentiment of the following text. Return JSON: {\"sentiment\": \"positive\"|\"negative\"|\"neutral\", \"confidence\": 0.0-1.0, \"reasoning\": \"one sentence\"}. Return only valid JSON."
+      },
+      {
+        "role": "user",
+        "content": "This product is absolutely fantastic, best purchase all year!"
+      }
     ],
-    "temperature": 0
+    "temperature": 0,
+    "max_tokens": 150
   }'
+```
+
+### Expected API Response
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "{\"sentiment\": \"positive\", \"confidence\": 0.95, \"reasoning\": \"Strongly positive language with superlatives indicating high satisfaction\"}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 68,
+    "completion_tokens": 28,
+    "total_tokens": 96
+  }
+}
 ```
 
 ## How It Works
 
-1. System prompt constrains output to a fixed JSON schema with known values
-2. Confidence score gives a sense of how clear the sentiment is
-3. Temperature 0 ensures reproducible results across identical inputs
+1. **System prompt constrains output** to a fixed JSON schema with known values
+2. **Confidence score** gives a measure of how clear the sentiment signal is
+3. **Reasoning field** makes the analysis explainable — useful for auditing
+4. **Temperature 0** ensures reproducible results across identical inputs
+
+### Key Parameters
+
+| Parameter     | Value | Why                                                    |
+|---------------|-------|--------------------------------------------------------|
+| `temperature` | 0     | Sentiment should be deterministic for the same input   |
+| `max_tokens`  | 150   | JSON response is compact                               |
+| `model`       | gpt-4 | Best at detecting sarcasm and nuance                   |
+
+## Granular Sentiment Scale
+
+For more nuance, expand the label set:
+
+```
+"Classify sentiment as one of: very_positive, positive, neutral, negative, very_negative."
+```
+
+Or use a numeric scale:
+
+```
+"Rate sentiment from -1.0 (extremely negative) to 1.0 (extremely positive)."
+```
+
+## Batch Processing
+
+Analyze multiple texts in one call to reduce cost:
+
+```python
+texts = ["Great product!", "Terrible service.", "It's fine."]
+prompt = "Analyze sentiment for each line. Return a JSON array with one object per line."
+```
 
 ## Tips
 
-- For nuanced analysis, expand labels: "very positive", "somewhat negative", etc.
-- Batch multiple texts in one call to reduce API round-trips
-- For mixed-sentiment text, ask the model to analyze sentence by sentence
+- **Sarcasm detection** is where LLMs shine over traditional tools — "Oh great, another update that breaks everything" is correctly identified as negative
+- **Mixed sentiment**: for reviews with both praise and complaints, ask for per-aspect sentiment: "Rate sentiment for: price, quality, shipping"
+- **Language matters**: GPT-4 handles sentiment in most major languages without translation
+- **Cost optimization**: `gpt-3.5-turbo` handles straightforward sentiment well; use `gpt-4` when sarcasm or nuance matters
+
+## Common Pitfalls
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Misses sarcasm | Using a weaker model | Use GPT-4 for nuanced text |
+| Always returns "neutral" | Text is ambiguous | Provide context or use a finer scale |
+| Confidence always 0.9+ | Model is overconfident | Treat as relative, not absolute |
+| Mixed sentiment mislabeled | Single-label forced choice | Use per-aspect analysis instead |

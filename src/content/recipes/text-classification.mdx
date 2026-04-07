@@ -11,7 +11,19 @@ estimatedCostPer1kTokens: 0.03
 
 ## What This Does
 
-Takes a piece of text and assigns it to one or more predefined categories. Common uses: support ticket routing, content moderation, email sorting, intent detection.
+Takes a piece of text and assigns it to one or more predefined categories. The LLM acts as a zero-shot classifier — no training data required, just a list of labels.
+
+### When to Use This
+
+- Routing support tickets to the right team (billing, technical, account)
+- Content moderation (flagging inappropriate content)
+- Email sorting and prioritization
+- Intent detection in chatbots
+- Tagging articles, reviews, or feedback by topic
+
+### How It Compares to Traditional Approaches
+
+Traditional classifiers (Naive Bayes, SVM, BERT fine-tunes) need labeled training data — often hundreds to thousands of examples per class. LLM classification works **out of the box** with zero examples. The tradeoff: higher per-request cost and latency, but dramatically faster to deploy and iterate.
 
 ## Code
 
@@ -24,19 +36,59 @@ client = openai.OpenAI(api_key="YOUR_API_KEY")
 
 CATEGORIES = ["billing", "technical", "account", "general"]
 
-def classify(text, categories=CATEGORIES):
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": f"Classify the following text into exactly one of these categories: {', '.join(categories)}. Reply with only the category name."},
-            {"role": "user", "content": text}
-        ],
-        temperature=0
-    )
-    return response.choices[0].message.content.strip().lower()
 
-result = classify("I can't log into my account and my password reset isn't working")
-print(result)  # "account"
+def classify(text, categories=CATEGORIES):
+    """
+    Classify text into one of the given categories.
+    Returns the category name as a lowercase string.
+    """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"Classify the following text into exactly one of these categories: "
+                        f"{', '.join(categories)}. "
+                        "Reply with only the category name, nothing else."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0,
+            max_tokens=20,
+        )
+        result = response.choices[0].message.content.strip().lower()
+
+        # Validate against known categories
+        if result not in [c.lower() for c in categories]:
+            print(f"Warning: model returned unknown category '{result}'")
+            return "general"
+        return result
+    except openai.APIError as e:
+        print(f"API error: {e}")
+        return None
+
+
+# --- Example usage ---
+
+tickets = [
+    "I was charged twice for my subscription last month",
+    "The API returns a 500 error when I send a POST request",
+    "I can't reset my password, the email never arrives",
+    "Do you have any plans to support webhooks?",
+]
+
+for ticket in tickets:
+    label = classify(ticket)
+    print(f"{label:>10} | {ticket}")
+
+# Expected output:
+#    billing | I was charged twice for my subscription last month
+#  technical | The API returns a 500 error when I send a POST request
+#    account | I can't reset my password, the email never arrives
+#    general | Do you have any plans to support webhooks?
 ```
 
 ### Node.js
@@ -45,22 +97,46 @@ print(result)  # "account"
 import OpenAI from "openai";
 
 const client = new OpenAI({ apiKey: "YOUR_API_KEY" });
+
 const CATEGORIES = ["billing", "technical", "account", "general"];
 
+/**
+ * Classify text into one of the given categories.
+ * @param {string} text - The input text to classify.
+ * @param {string[]} categories - Valid category labels.
+ * @returns {Promise<string|null>} The predicted category.
+ */
 async function classify(text, categories = CATEGORIES) {
-  const response = await client.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      { role: "system", content: `Classify the following text into exactly one of these categories: ${categories.join(", ")}. Reply with only the category name.` },
-      { role: "user", content: text },
-    ],
-    temperature: 0,
-  });
-  return response.choices[0].message.content.trim().toLowerCase();
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: `Classify the following text into exactly one of these categories: ${categories.join(", ")}. Reply with only the category name, nothing else.`,
+        },
+        { role: "user", content: text },
+      ],
+      temperature: 0,
+      max_tokens: 20,
+    });
+
+    const result = response.choices[0].message.content.trim().toLowerCase();
+    if (!categories.map((c) => c.toLowerCase()).includes(result)) {
+      console.warn(`Unknown category: '${result}', defaulting to 'general'`);
+      return "general";
+    }
+    return result;
+  } catch (error) {
+    console.error("API error:", error.message);
+    return null;
+  }
 }
 
-const result = await classify("I can't log into my account");
-console.log(result); // "account"
+// --- Example usage ---
+
+const label = await classify("I was charged twice for my subscription");
+console.log(label); // "billing"
 ```
 
 ### curl
@@ -72,21 +148,81 @@ curl https://api.openai.com/v1/chat/completions \
   -d '{
     "model": "gpt-4",
     "messages": [
-      {"role": "system", "content": "Classify the following text into exactly one of these categories: billing, technical, account, general. Reply with only the category name."},
-      {"role": "user", "content": "I can not log into my account and my password reset is not working"}
+      {
+        "role": "system",
+        "content": "Classify the following text into exactly one of these categories: billing, technical, account, general. Reply with only the category name, nothing else."
+      },
+      {
+        "role": "user",
+        "content": "I was charged twice for my subscription last month"
+      }
     ],
-    "temperature": 0
+    "temperature": 0,
+    "max_tokens": 20
   }'
+```
+
+### Expected API Response
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "billing"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 52,
+    "completion_tokens": 1,
+    "total_tokens": 53
+  }
+}
 ```
 
 ## How It Works
 
-1. System prompt lists the valid categories, forcing the model to pick one
-2. Temperature 0 makes output fully deterministic
-3. The instruction "reply with only the category name" ensures clean, parseable output
+1. **System prompt lists valid categories**: the model is constrained to pick from your set
+2. **"Reply with only the category name"**: forces clean, parseable output — no sentences, no explanation
+3. **Temperature 0**: fully deterministic — same input always produces the same label
+4. **max_tokens 20**: the answer is 1–3 words max, so cap it tightly
+
+### Key Parameters
+
+| Parameter     | Value | Why                                                    |
+|---------------|-------|--------------------------------------------------------|
+| `temperature` | 0     | Classification needs consistency, not creativity       |
+| `max_tokens`  | 20    | Category name is 1–3 words max                         |
+| `model`       | gpt-4 | Best accuracy. `gpt-3.5-turbo` works for clear-cut cases |
+
+## Multi-Label Classification
+
+For texts that belong to multiple categories, change the prompt:
+
+```
+"Classify the following text into ALL applicable categories from this list:
+billing, technical, account, general.
+Reply with a comma-separated list of category names, nothing else."
+```
+
+Then parse the response: `result.split(", ")`
 
 ## Tips
 
-- Add a "other" category as a catch-all to avoid forced misclassification
-- For multi-label classification, change the prompt to "list all applicable categories"
-- Validate the response against your known categories — LLMs can hallucinate new ones
+- **Always validate output**: the model can return a category not in your list — check against known values and fall back to a default
+- **Add an "other" or "general" catch-all**: prevents force-fitting ambiguous text into a wrong category
+- **Batch for cost savings**: classify multiple texts in one call — "Classify each line. Return one category per line"
+- **Few-shot helps edge cases**: if the model misclassifies a common pattern, add 2–3 examples in the system prompt
+- **For production at scale**: consider fine-tuning `gpt-3.5-turbo` on a labeled dataset — much cheaper per request
+
+## Common Pitfalls
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Model returns a sentence instead of a label | Prompt too vague | Add "Reply with only the category name, nothing else" |
+| Model invents new categories | No constraint | Validate against your list, fall back to default |
+| Inconsistent casing | Model varies | Always `.toLowerCase()` / `.strip().lower()` |
+| Wrong for ambiguous text | True ambiguity | Add "other" category, or allow multi-label |
