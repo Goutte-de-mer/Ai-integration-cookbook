@@ -1,14 +1,11 @@
 /**
  * Preview card for a single recipe in the grid view.
+ *
+ * Props:
+ *   recipe - { slug, title, description, difficulty }
  */
 
-import { Recipe } from "@/types";
-
-interface RecipeCardProps {
-  recipe: Recipe;
-}
-
-export default function RecipeCard({ recipe }: RecipeCardProps) {
+export default function RecipeCard({ recipe }) {
   return (
     <a
       href={`/recipes/${recipe.slug}`}

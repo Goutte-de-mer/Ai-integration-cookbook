@@ -1,17 +1,12 @@
-import type { Metadata } from "next";
 import "./globals.css";
 
-export const metadata: Metadata = {
+export const metadata = {
   title: "AI Integration Cookbook",
   description:
     "Interactive, copy-paste code recipes for common AI/LLM use cases.",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className="min-h-screen bg-white text-gray-900 antialiased">
