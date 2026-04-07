@@ -5,13 +5,25 @@ description: "Translate text between languages while preserving tone and context
 category: "text"
 difficulty: "beginner"
 models: ["gpt-4", "claude-3", "mistral-large"]
-tags: ["text", "translation", "language", "i18n"]
+tags: ["text", "translation", "i18n", "localization"]
 estimatedCostPer1kTokens: 0.03
 ---
 
 ## What This Does
 
-Translates text from one language to another while preserving meaning, tone, and context. Unlike basic translation APIs, LLMs handle idioms, formal/informal register, and domain-specific terminology well.
+Translates text between languages while preserving meaning, tone, and context. Unlike simple word-for-word translation, LLMs understand idioms, formality levels, and domain-specific terminology.
+
+### When to Use This
+
+- Translating user-facing content for internationalization (i18n)
+- Localizing marketing copy while keeping the tone
+- Translating customer support messages in real-time
+- Processing multilingual data pipelines
+- Translating technical documentation with domain-specific terms
+
+### How It Compares to Traditional Approaches
+
+Google Translate / DeepL are fast, cheap, and good for general text. LLMs add value when you need **tone control** (formal vs. casual), **domain expertise** (medical, legal, technical), or **contextual adaptation** (marketing localization, not just translation).
 
 ## Code
 
@@ -22,20 +34,77 @@ import openai
 
 client = openai.OpenAI(api_key="YOUR_API_KEY")
 
-def translate(text, target_language, tone="neutral"):
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": f"Translate the following text to {target_language}. Maintain the original tone ({tone}). Return only the translation, no explanation."},
-            {"role": "user", "content": text}
-        ],
-        temperature=0.3
-    )
-    return response.choices[0].message.content
 
-result = translate("The quick brown fox jumps over the lazy dog.", "French")
+def translate(text, target_language, tone="neutral", domain=""):
+    """
+    Translate text to the target language with tone and domain control.
+
+    Args:
+        text: The text to translate.
+        target_language: e.g., "Spanish", "Japanese", "French".
+        tone: "formal", "casual", or "neutral".
+        domain: Optional domain hint, e.g., "medical", "legal".
+    Returns:
+        The translated string, or None on error.
+    """
+    instructions = [
+        f"Translate the following text into {target_language}.",
+        f"Use a {tone} tone.",
+        "Preserve the original meaning and intent.",
+        "Do not add explanations — return only the translated text.",
+    ]
+    if domain:
+        instructions.append(f"Use terminology appropriate for the {domain} domain.")
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": " ".join(instructions)},
+                {"role": "user", "content": text},
+            ],
+            temperature=0.3,
+            max_tokens=2000,
+        )
+        return response.choices[0].message.content
+    except openai.APIError as e:
+        print(f"API error: {e}")
+        return None
+
+
+# --- Example: basic translation ---
+
+result = translate(
+    "Our new AI-powered analytics platform helps teams make data-driven decisions faster.",
+    target_language="Spanish",
+)
 print(result)
-# "Le rapide renard brun saute par-dessus le chien paresseux."
+# "Nuestra nueva plataforma de análisis impulsada por IA ayuda a los equipos
+#  a tomar decisiones basadas en datos de forma más rápida."
+
+
+# --- Example: formal medical translation ---
+
+result = translate(
+    "The patient presents with acute respiratory distress and elevated troponin levels.",
+    target_language="French",
+    tone="formal",
+    domain="medical",
+)
+print(result)
+# "Le patient présente une détresse respiratoire aiguë et des taux de
+#  troponine élevés."
+
+
+# --- Example: casual marketing copy ---
+
+result = translate(
+    "Hey! Check out our awesome new features. They're going to blow your mind! 🚀",
+    target_language="Japanese",
+    tone="casual",
+)
+print(result)
+# "ねえ！すごい新機能をチェックしてみて。きっとびっくりするよ！🚀"
 ```
 
 ### Node.js
@@ -45,20 +114,50 @@ import OpenAI from "openai";
 
 const client = new OpenAI({ apiKey: "YOUR_API_KEY" });
 
-async function translate(text, targetLanguage, tone = "neutral") {
-  const response = await client.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      { role: "system", content: `Translate the following text to ${targetLanguage}. Maintain the original tone (${tone}). Return only the translation, no explanation.` },
-      { role: "user", content: text },
-    ],
-    temperature: 0.3,
-  });
-  return response.choices[0].message.content;
+/**
+ * Translate text to a target language with tone control.
+ * @param {string} text - The text to translate.
+ * @param {string} targetLanguage - e.g., "Spanish", "German".
+ * @param {Object} options
+ * @param {string} [options.tone="neutral"] - "formal", "casual", or "neutral".
+ * @param {string} [options.domain] - Optional domain like "legal", "medical".
+ * @returns {Promise<string|null>} The translated text.
+ */
+async function translate(text, targetLanguage, { tone = "neutral", domain } = {}) {
+  const instructions = [
+    `Translate the following text into ${targetLanguage}.`,
+    `Use a ${tone} tone.`,
+    "Preserve the original meaning and intent.",
+    "Return only the translated text.",
+  ];
+  if (domain) instructions.push(`Use ${domain} domain terminology.`);
+
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: instructions.join(" ") },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: 2000,
+    });
+    return response.choices[0].message.content;
+  } catch (error) {
+    console.error("API error:", error.message);
+    return null;
+  }
 }
 
-const result = await translate("Hello, how are you?", "Spanish");
-console.log(result); // "Hola, ¿cómo estás?"
+// --- Example usage ---
+
+const result = await translate(
+  "Our platform helps teams work smarter.",
+  "German",
+  { tone: "formal" }
+);
+console.log(result);
+// "Unsere Plattform hilft Teams, intelligenter zu arbeiten."
 ```
 
 ### curl
@@ -70,21 +169,121 @@ curl https://api.openai.com/v1/chat/completions \
   -d '{
     "model": "gpt-4",
     "messages": [
-      {"role": "system", "content": "Translate the following text to French. Maintain the original tone. Return only the translation."},
-      {"role": "user", "content": "The quick brown fox jumps over the lazy dog."}
+      {
+        "role": "system",
+        "content": "Translate the following text into Spanish. Use a casual tone. Preserve the original meaning. Return only the translated text."
+      },
+      {
+        "role": "user",
+        "content": "Hey! Check out our awesome new features."
+      }
     ],
-    "temperature": 0.3
+    "temperature": 0.3,
+    "max_tokens": 2000
   }'
+```
+
+### Expected API Response
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "¡Oye! Echa un vistazo a nuestras increíbles nuevas funciones."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 48,
+    "completion_tokens": 16,
+    "total_tokens": 64
+  }
+}
 ```
 
 ## How It Works
 
-1. System prompt specifies target language and tone preservation
-2. Moderate temperature (0.3) allows natural phrasing while staying accurate
-3. "Return only the translation" eliminates conversational preamble
+1. **System prompt controls three axes**: target language, tone, and domain — each shapes the output independently
+2. **Temperature 0.3**: slight variation keeps translations natural without being too creative
+3. **"Return only the translated text"**: prevents the model from adding notes like "Translation:" or explaining its choices
+4. **Domain hints**: telling the model "medical" or "legal" activates domain-specific vocabulary
+
+### Key Parameters
+
+| Parameter     | Value | Why                                                    |
+|---------------|-------|--------------------------------------------------------|
+| `temperature` | 0.3   | Natural phrasing without too much creativity           |
+| `max_tokens`  | 2000  | Translations can be longer than the original (especially CJK → English) |
+| `model`       | gpt-4 | Best for nuance. `gpt-3.5-turbo` fine for simple translations |
+
+## Batch Translation
+
+Translate multiple strings efficiently:
+
+```python
+def translate_batch(texts, target_language, tone="neutral"):
+    """Translate multiple texts in one API call."""
+    numbered = "\n".join(f"{i+1}. {t}" for i, t in enumerate(texts))
+    prompt = (
+        f"Translate each numbered line into {target_language}. "
+        f"Use a {tone} tone. "
+        "Return the translations in the same numbered format."
+    )
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": numbered},
+        ],
+        temperature=0.3,
+    )
+    lines = response.choices[0].message.content.strip().split("\n")
+    # Strip numbering from each line
+    return [line.split(". ", 1)[1] if ". " in line else line for line in lines]
+
+
+# Translate UI strings in bulk
+ui_strings = ["Sign Up", "Log In", "Forgot Password?", "Welcome back!"]
+translated = translate_batch(ui_strings, "German")
+# ["Registrieren", "Anmelden", "Passwort vergessen?", "Willkommen zurück!"]
+```
+
+## i18n JSON File Translation
+
+For apps using JSON translation files:
+
+```python
+import json
+
+def translate_i18n_file(json_data, target_language):
+    """Translate all values in a flat i18n JSON object."""
+    texts = list(json_data.values())
+    translated = translate_batch(texts, target_language)
+    return dict(zip(json_data.keys(), translated))
+
+
+en = {"greeting": "Welcome!", "cta": "Get Started", "logout": "Sign Out"}
+es = translate_i18n_file(en, "Spanish")
+# {"greeting": "¡Bienvenido!", "cta": "Comenzar", "logout": "Cerrar sesión"}
+```
 
 ## Tips
 
-- Specify domain context for technical text: "Translate this medical report to German"
-- For formal documents, set tone to "formal" explicitly
-- Translate in batches (one paragraph per call) for long documents to maintain consistency
+- **Tone matters**: "formal" vs "casual" produces dramatically different results in languages with formality registers (Japanese, Korean, German, Spanish)
+- **Preserve placeholders**: if your text has `{name}` or `{{count}}` template variables, add "Preserve all template variables like {name} exactly as-is"
+- **Glossaries**: for consistent terminology, add to the prompt: "Use these translations: 'dashboard' = 'Tableau de bord', 'pipeline' = 'Pipeline'"
+- **Back-translation verification**: translate the output back to English to check for meaning drift
+- **Cost**: for high-volume translations, DeepL or Google Translate is 100x cheaper. Use LLMs for quality-critical or context-dependent text
+
+## Common Pitfalls
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Template variables translated | Model treats `{name}` as text | Add "Preserve template variables exactly" |
+| Wrong formality level | Not specified | Always set tone: formal, casual, or neutral |
+| Inconsistent terminology | No glossary | Provide a glossary in the system prompt |
+| Emoji removed | Model "cleans up" | Add "Preserve all emoji" |
+| Output includes "Translation:" prefix | Model adds context | Add "Return only the translated text" |

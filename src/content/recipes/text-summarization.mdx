@@ -11,7 +11,19 @@ estimatedCostPer1kTokens: 0.03
 
 ## What This Does
 
-Takes a long piece of text and returns a concise summary preserving the key information. Useful for processing articles, documents, support tickets, or any content where readers need the gist quickly.
+Takes a long piece of text — an article, document, email thread, support ticket — and returns a concise summary that preserves the key information. This is one of the most common and immediately useful LLM integrations.
+
+### When to Use This
+
+- Generating previews for long articles or documents
+- Summarizing customer support conversations for handoffs
+- Creating email digests from newsletters
+- Condensing meeting notes or transcripts
+- Building "TLDR" features in any text-heavy product
+
+### How It Compares to Traditional Approaches
+
+Unlike extractive summarization (which pulls existing sentences), LLM-based summarization is **abstractive** — it rephrases and restructures. This produces more natural, readable summaries but requires careful prompting to avoid hallucination.
 
 ## Code
 
@@ -22,19 +34,64 @@ import openai
 
 client = openai.OpenAI(api_key="YOUR_API_KEY")
 
-def summarize(text, max_sentences=3):
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": f"Summarize the following text in {max_sentences} sentences or fewer. Be concise and preserve key facts."},
-            {"role": "user", "content": text}
-        ],
-        temperature=0.3
-    )
-    return response.choices[0].message.content
 
-result = summarize("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.")
-print(result)
+def summarize(text, max_sentences=3):
+    """
+    Summarize text into a fixed number of sentences.
+    Returns just the summary string.
+    """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"Summarize the following text in {max_sentences} sentences or fewer. "
+                        "Be concise and preserve key facts. Do not add information not present "
+                        "in the original text."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0.3,
+            max_tokens=500,
+        )
+        return response.choices[0].message.content
+    except openai.APIError as e:
+        print(f"API error: {e}")
+        return None
+
+
+# --- Example usage ---
+
+article = """
+Artificial intelligence has transformed the healthcare industry in remarkable ways
+over the past decade. Machine learning algorithms now assist radiologists in
+detecting tumors in medical imaging with accuracy rates exceeding 95%. Natural
+language processing helps clinical staff extract relevant information from
+unstructured patient notes, reducing documentation time by up to 40%.
+
+However, challenges remain. Data privacy regulations like HIPAA in the US and
+GDPR in Europe impose strict requirements on how patient data can be used for
+AI training. Bias in training datasets has led to models that perform differently
+across demographic groups, raising equity concerns. Additionally, the "black box"
+nature of many AI systems makes it difficult for clinicians to explain
+AI-assisted decisions to patients.
+
+Despite these hurdles, investment in healthcare AI continues to grow. The global
+market is projected to reach $187 billion by 2030, with diagnostic imaging,
+drug discovery, and personalized treatment planning leading adoption.
+"""
+
+summary = summarize(article)
+print(summary)
+# Expected output (will vary):
+# "AI has significantly impacted healthcare, with ML achieving over 95% accuracy
+#  in tumor detection and NLP reducing documentation time by 40%. Challenges
+#  include data privacy regulations, bias in training data, and difficulty
+#  explaining AI decisions. The healthcare AI market is projected to reach
+#  $187 billion by 2030."
 ```
 
 ### Node.js
@@ -44,20 +101,40 @@ import OpenAI from "openai";
 
 const client = new OpenAI({ apiKey: "YOUR_API_KEY" });
 
+/**
+ * Summarize text into a fixed number of sentences.
+ * @param {string} text - The text to summarize.
+ * @param {number} maxSentences - Maximum sentences in the summary.
+ * @returns {Promise<string|null>} The summary, or null on error.
+ */
 async function summarize(text, maxSentences = 3) {
-  const response = await client.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      { role: "system", content: `Summarize the following text in ${maxSentences} sentences or fewer. Be concise and preserve key facts.` },
-      { role: "user", content: text },
-    ],
-    temperature: 0.3,
-  });
-  return response.choices[0].message.content;
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: `Summarize the following text in ${maxSentences} sentences or fewer. Be concise and preserve key facts. Do not add information not present in the original text.`,
+        },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: 500,
+    });
+    return response.choices[0].message.content;
+  } catch (error) {
+    console.error("API error:", error.message);
+    return null;
+  }
 }
 
-const result = await summarize("Lorem ipsum dolor sit amet...");
-console.log(result);
+// --- Example usage ---
+
+const article = `Artificial intelligence has transformed the healthcare industry
+in remarkable ways over the past decade...`;
+
+const summary = await summarize(article);
+console.log(summary);
 ```
 
 ### curl
@@ -69,21 +146,69 @@ curl https://api.openai.com/v1/chat/completions \
   -d '{
     "model": "gpt-4",
     "messages": [
-      {"role": "system", "content": "Summarize the following text in 3 sentences or fewer."},
-      {"role": "user", "content": "Lorem ipsum dolor sit amet..."}
+      {
+        "role": "system",
+        "content": "Summarize the following text in 3 sentences or fewer. Be concise and preserve key facts. Do not add information not present in the original text."
+      },
+      {
+        "role": "user",
+        "content": "Artificial intelligence has transformed the healthcare industry in remarkable ways over the past decade. Machine learning algorithms now assist radiologists in detecting tumors in medical imaging with accuracy rates exceeding 95%. Natural language processing helps clinical staff extract relevant information from unstructured patient notes, reducing documentation time by up to 40%. However, challenges remain including data privacy and bias. The global market is projected to reach $187 billion by 2030."
+      }
     ],
-    "temperature": 0.3
+    "temperature": 0.3,
+    "max_tokens": 500
   }'
+```
+
+### Expected API Response
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "AI has significantly impacted healthcare, with ML achieving over 95% accuracy in tumor detection and NLP reducing documentation time by 40%. Challenges persist around data privacy regulations and training data bias. The global healthcare AI market is projected to reach $187 billion by 2030."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 210,
+    "completion_tokens": 58,
+    "total_tokens": 268
+  }
+}
 ```
 
 ## How It Works
 
-1. The system prompt instructs the model to summarize, constraining output length
-2. Low temperature (0.3) keeps the output factual and deterministic
-3. The model identifies key points and compresses them into the requested format
+1. **System prompt sets the rules**: the instruction constrains the model to a fixed number of sentences and tells it not to invent facts
+2. **Low temperature (0.3)**: keeps the output factual and close to the source material — higher values produce more creative (but less reliable) rephrasing
+3. **max_tokens cap**: prevents runaway responses if the model ignores the sentence limit
+4. The model identifies the most important claims, compresses them, and rephrases them into fluent sentences
+
+### Key Parameters
+
+| Parameter     | Value | Why                                                    |
+|---------------|-------|--------------------------------------------------------|
+| `temperature` | 0.3   | Low = factual, deterministic. Raise to 0.7 for more natural phrasing |
+| `max_tokens`  | 500   | Safety cap. Summaries rarely need more than 200 tokens |
+| `model`       | gpt-4 | Best quality. Use `gpt-3.5-turbo` for 10x cheaper at slightly lower quality |
 
 ## Tips
 
-- Lower temperature = more factual, higher = more creative rephrasing
-- For very long inputs, chunk the text and summarize each chunk, then summarize the summaries
-- Add "in bullet points" to the system prompt if you prefer structured output
+- **For very long inputs** (>4000 words): chunk the text into sections, summarize each, then summarize the summaries. This "map-reduce" pattern avoids hitting context limits
+- **For bullet points**: add "Format as bullet points" to the system prompt
+- **For specific focus**: add "Focus on financial figures" or "Focus on action items" to guide what the model considers important
+- **Watch for hallucination**: LLMs can occasionally invent details — for high-stakes use cases, add "Only include information explicitly stated in the text"
+- **Cost optimization**: `gpt-3.5-turbo` handles summarization well for most content. Reserve `gpt-4` for nuanced or technical text
+
+## Common Pitfalls
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Summary is too long | Model ignores sentence limit | Add `max_tokens` cap, be more explicit in prompt |
+| Summary invents facts | Hallucination | Add "Do not add information not in the original" |
+| Summary misses key points | Text too long for context | Chunk and summarize in stages |
+| Inconsistent output | High temperature | Lower to 0.2–0.3 |

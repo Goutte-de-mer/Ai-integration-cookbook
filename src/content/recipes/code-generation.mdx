@@ -1,17 +1,29 @@
 ---
 title: "Code Generation"
 slug: "code-generation"
-description: "Generate working code from a natural language description."
+description: "Generate, complete, and explain code using an LLM."
 category: "code"
 difficulty: "intermediate"
 models: ["gpt-4", "claude-3"]
-tags: ["code", "generation", "programming"]
+tags: ["code", "generation", "programming", "developer-tools"]
 estimatedCostPer1kTokens: 0.03
 ---
 
 ## What This Does
 
-Converts a plain English description into working code in a specified language. Useful for prototyping, boilerplate generation, algorithm implementation, and learning.
+Send a natural language description of what you want and receive working code in return. Goes beyond simple autocomplete — the model understands architecture, libraries, and best practices across dozens of languages.
+
+### When to Use This
+
+- Generating boilerplate code from specifications
+- Converting pseudocode or comments into implementations
+- Porting code between languages (Python → JavaScript, etc.)
+- Writing unit tests from function signatures
+- Explaining unfamiliar code to developers
+
+### How It Compares to Traditional Approaches
+
+Code templates and snippets cover common patterns. LLMs generate **custom code for specific requirements**, handle edge cases described in natural language, and adapt to your existing codebase style.
 
 ## Code
 
@@ -22,18 +34,88 @@ import openai
 
 client = openai.OpenAI(api_key="YOUR_API_KEY")
 
-def generate_code(description, language="python"):
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": f"You are a senior {language} developer. Generate clean, working code for the given task. Include brief comments. Return only the code block, no explanation."},
-            {"role": "user", "content": description}
-        ],
-        temperature=0.2
-    )
-    return response.choices[0].message.content
 
-code = generate_code("A function that validates email addresses using regex")
+def generate_code(description, language="python", context=""):
+    """
+    Generate code from a natural language description.
+    
+    Args:
+        description: What the code should do.
+        language: Target programming language.
+        context: Optional existing code for context.
+    Returns:
+        Generated code as a string.
+    """
+    system_prompt = (
+        f"You are an expert {language} developer. "
+        f"Generate clean, well-structured {language} code based on the description. "
+        "Include brief inline comments for non-obvious logic. "
+        "Do not include explanations outside the code block. "
+        "Return only the code."
+    )
+
+    user_message = description
+    if context:
+        user_message = f"Existing code:\n```\n{context}\n```\n\nTask: {description}"
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.2,
+            max_tokens=2000,
+        )
+        code = response.choices[0].message.content
+
+        # Strip markdown code fences if present
+        if code.startswith("```"):
+            lines = code.split("\n")
+            # Remove first line (```python) and last line (```)
+            code = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else code
+
+        return code
+    except openai.APIError as e:
+        print(f"API error: {e}")
+        return None
+
+
+# --- Example: generate a function ---
+
+code = generate_code(
+    "A function that takes a list of integers and returns the top N most frequent "
+    "elements. If there's a tie, prefer the smaller number. Include type hints."
+)
+print(code)
+# Expected output:
+# from collections import Counter
+#
+# def top_n_frequent(nums: list[int], n: int) -> list[int]:
+#     """Return the top N most frequent elements, preferring smaller on ties."""
+#     count = Counter(nums)
+#     # Sort by frequency (descending), then by value (ascending) for ties
+#     sorted_items = sorted(count.keys(), key=lambda x: (-count[x], x))
+#     return sorted_items[:n]
+
+
+# --- Example: generate with existing code context ---
+
+existing = """
+class UserService:
+    def __init__(self, db):
+        self.db = db
+
+    def get_user(self, user_id):
+        return self.db.query(User).filter_by(id=user_id).first()
+"""
+
+code = generate_code(
+    "Add a method to update a user's email with validation. "
+    "Raise ValueError for invalid emails.",
+    context=existing,
+)
 print(code)
 ```
 
@@ -44,46 +126,118 @@ import OpenAI from "openai";
 
 const client = new OpenAI({ apiKey: "YOUR_API_KEY" });
 
-async function generateCode(description, language = "javascript") {
-  const response = await client.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      { role: "system", content: `You are a senior ${language} developer. Generate clean, working code for the given task. Include brief comments. Return only the code block, no explanation.` },
-      { role: "user", content: description },
-    ],
-    temperature: 0.2,
-  });
-  return response.choices[0].message.content;
+/**
+ * Generate code from a natural language description.
+ * @param {string} description - What the code should do.
+ * @param {string} language - Target language (default: "javascript").
+ * @param {string} context - Existing code for context.
+ * @returns {Promise<string|null>} The generated code.
+ */
+async function generateCode(description, language = "javascript", context = "") {
+  const systemPrompt = `You are an expert ${language} developer. Generate clean, well-structured ${language} code based on the description. Include brief inline comments for non-obvious logic. Return only the code.`;
+
+  let userMessage = description;
+  if (context) {
+    userMessage = `Existing code:\n\`\`\`\n${context}\n\`\`\`\n\nTask: ${description}`;
+  }
+
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      temperature: 0.2,
+      max_tokens: 2000,
+    });
+
+    let code = response.choices[0].message.content;
+
+    // Strip markdown fences if present
+    if (code.startsWith("```")) {
+      const lines = code.split("\n");
+      if (lines[lines.length - 1].trim() === "```") {
+        code = lines.slice(1, -1).join("\n");
+      }
+    }
+
+    return code;
+  } catch (error) {
+    console.error("API error:", error.message);
+    return null;
+  }
 }
 
-const code = await generateCode("A function that validates email addresses using regex");
+// --- Example usage ---
+
+const code = await generateCode(
+  "A function that debounces another function with a configurable delay"
+);
 console.log(code);
 ```
 
-### curl
+### Expected API Response
 
-```bash
-curl https://api.openai.com/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [
-      {"role": "system", "content": "You are a senior python developer. Generate clean, working code for the given task. Include brief comments. Return only the code block, no explanation."},
-      {"role": "user", "content": "A function that validates email addresses using regex"}
-    ],
-    "temperature": 0.2
-  }'
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "```python\nfrom collections import Counter\n\ndef top_n_frequent(nums: list[int], n: int) -> list[int]:\n    count = Counter(nums)\n    sorted_items = sorted(count.keys(), key=lambda x: (-count[x], x))\n    return sorted_items[:n]\n```"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 85,
+    "completion_tokens": 62,
+    "total_tokens": 147
+  }
+}
 ```
 
 ## How It Works
 
-1. The system prompt sets the role as a developer in the target language
-2. "Return only the code block" prevents conversational filler
-3. Low temperature (0.2) favors correct, conventional code over creative alternatives
+1. **System prompt establishes expertise**: telling the model it's an "expert developer" improves output quality
+2. **Low temperature (0.2)**: produces more conventional, predictable code — higher values lead to more creative but potentially buggy solutions
+3. **Context injection**: providing existing code helps the model match your style, patterns, and conventions
+4. **Markdown stripping**: models often wrap code in backtick fences — strip them for clean output
+
+### Key Parameters
+
+| Parameter     | Value | Why                                                    |
+|---------------|-------|--------------------------------------------------------|
+| `temperature` | 0.2   | Low for conventional code, raise for creative solutions |
+| `max_tokens`  | 2000  | Code can be verbose — functions, classes, imports       |
+| `model`       | gpt-4 | Best code quality. Claude 3 excels at longer code      |
+
+## Prompt Patterns
+
+| Task | Prompt Pattern |
+|------|---------------|
+| Function generation | "Write a function that [does X]. Include type hints and docstring." |
+| Unit tests | "Write unit tests for this function: [code]. Use pytest. Cover edge cases." |
+| Code review | "Review this code for bugs, performance issues, and best practice violations: [code]" |
+| Language porting | "Convert this Python code to TypeScript: [code]" |
+| Explanation | "Explain what this code does, line by line: [code]" |
+| Refactoring | "Refactor this code to use [pattern]. Keep the same behavior: [code]" |
 
 ## Tips
 
-- Always review and test generated code before using in production
-- Include constraints in the description: "no external dependencies", "handle edge cases"
-- For complex tasks, describe the function signature and expected input/output explicitly
+- **Be specific**: "Write a REST endpoint" is vague. "Write a FastAPI POST endpoint at /users that accepts `{name, email}`, validates the email, and returns the created user with a 201 status" produces much better code
+- **Provide context**: the more existing code you share (imports, related functions, data models), the better the generated code fits your project
+- **Ask for tests alongside code**: "Also include pytest tests" catches bugs early
+- **Strip markdown fences**: models usually wrap code in \`\`\` — always strip before using
+- **Review everything**: LLM code works most of the time but can have subtle bugs (off-by-one errors, missing edge cases, deprecated APIs). Always review before committing
+
+## Common Pitfalls
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Code uses deprecated APIs | Model trained on older data | Specify library versions: "Use React 18 hooks" |
+| Import doesn't exist | Model hallucinates packages | Verify all imports manually |
+| Works but is inefficient | Not specified | Add "Optimize for performance" to prompt |
+| Wrong coding style | No context | Provide existing code or style guidelines |
+| Incomplete solution | Ran out of tokens | Increase `max_tokens`, or split into smaller requests |

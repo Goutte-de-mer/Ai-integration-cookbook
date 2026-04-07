@@ -1,5 +1,6 @@
 import { RECIPES } from "@/lib/recipes";
 import { getCategoryById } from "@/lib/categories";
+import { getRecipeBySlug } from "@/lib/mdx";
 
 export function generateStaticParams() {
   return RECIPES.map((r) => ({ slug: r.slug }));
@@ -9,6 +10,7 @@ export default async function RecipePage({ params }) {
   const { slug } = await params;
   const recipe = RECIPES.find((r) => r.slug === slug);
   const category = recipe ? getCategoryById(recipe.category) : null;
+  const mdx = await getRecipeBySlug(slug);
 
   return (
     <div>
@@ -24,8 +26,19 @@ export default async function RecipePage({ params }) {
         <span>{recipe ? recipe.title : slug}</span>
       </nav>
 
-      <h2 className="mb-4 text-2xl font-semibold">{recipe ? recipe.title : slug}</h2>
-      {/* TODO: load recipe MDX, render CodeBlock, CostEstimator */}
+      <h1 className="mb-2 text-3xl font-bold">{recipe ? recipe.title : slug}</h1>
+      {recipe && (
+        <p className="mb-6 text-gray-500">{recipe.description}</p>
+      )}
+
+      {mdx ? (
+        <article
+          className="prose prose-gray max-w-none prose-headings:scroll-mt-20 prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100"
+          dangerouslySetInnerHTML={{ __html: mdx.html }}
+        />
+      ) : (
+        <p className="text-gray-400 italic">Recipe content coming soon.</p>
+      )}
     </div>
   );
 }
