@@ -1,17 +1,29 @@
 ---
 title: "Structured Data Extraction"
 slug: "structured-data-extraction"
-description: "Extract structured JSON data from unstructured text like invoices or emails."
+description: "Extract structured JSON data from unstructured text like invoices, emails, or reports."
 category: "data"
 difficulty: "intermediate"
 models: ["gpt-4", "claude-3"]
-tags: ["data", "json", "extraction", "parsing"]
+tags: ["data", "extraction", "json", "parsing"]
 estimatedCostPer1kTokens: 0.03
 ---
 
 ## What This Does
 
-Parses unstructured text (emails, invoices, forms, documents) and extracts structured data in a predefined JSON schema. Eliminates manual data entry for repetitive document processing.
+Converts messy, unstructured text — emails, invoices, reports, web pages — into clean, typed JSON that your application can process directly. Define the shape of the data you want, and the LLM fills it in.
+
+### When to Use This
+
+- Parsing invoices and receipts into structured line items
+- Extracting contact info from email signatures
+- Converting job postings into structured fields (title, salary, requirements)
+- Processing form responses or survey free-text into categories
+- Building data pipelines from unstructured sources (PDFs, emails, chat logs)
+
+### How It Compares to Traditional Approaches
+
+Regex and rule-based parsers work for highly consistent formats but break on variations. LLMs handle **messy, inconsistent formats** and adapt to new layouts without rewriting rules.
 
 ## Code
 
@@ -23,39 +35,138 @@ import json
 
 client = openai.OpenAI(api_key="YOUR_API_KEY")
 
-SCHEMA = {
-    "vendor": "string",
-    "invoice_number": "string",
-    "date": "YYYY-MM-DD",
-    "line_items": [{"description": "string", "quantity": "number", "price": "number"}],
-    "total": "number"
-}
+INVOICE_SCHEMA = """{
+  "vendor": "string",
+  "invoice_number": "string",
+  "date": "YYYY-MM-DD",
+  "items": [
+    {
+      "description": "string",
+      "quantity": number,
+      "unit_price": number,
+      "total": number
+    }
+  ],
+  "subtotal": number,
+  "tax": number,
+  "total": number,
+  "currency": "string (ISO 4217)"
+}"""
 
-def extract_invoice(text):
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": f"Extract invoice data from the text. Return JSON matching this schema: {json.dumps(SCHEMA)}. Return only valid JSON."},
-            {"role": "user", "content": text}
-        ],
-        temperature=0
-    )
-    return json.loads(response.choices[0].message.content)
+
+def extract_structured_data(text, schema=INVOICE_SCHEMA, context="an invoice"):
+    """
+    Extract structured data from unstructured text.
+
+    Args:
+        text: The unstructured input text.
+        schema: JSON schema string describing the desired output.
+        context: Brief description of what the text is (e.g., "an invoice").
+    Returns:
+        Parsed JSON dict, or None on error.
+    """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"Extract data from {context} into the following JSON structure:\n"
+                        f"{schema}\n\n"
+                        "Rules:\n"
+                        "- Return only valid JSON, no markdown or explanation\n"
+                        "- Use null for fields that cannot be determined\n"
+                        "- Normalize dates to YYYY-MM-DD\n"
+                        "- Use numbers (not strings) for numeric fields\n"
+                        "- Currency should be ISO 4217 code (USD, EUR, GBP)"
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0,
+            max_tokens=2000,
+        )
+
+        raw = response.choices[0].message.content
+        # Strip markdown fences if model adds them
+        if raw.startswith("```"):
+            raw = "\n".join(raw.split("\n")[1:-1])
+        return json.loads(raw)
+
+    except json.JSONDecodeError as e:
+        print(f"Invalid JSON: {e}")
+        return None
+    except openai.APIError as e:
+        print(f"API error: {e}")
+        return None
+
+
+# --- Example usage ---
 
 invoice_text = """
-Invoice #INV-2024-0042
-From: Acme Supplies Ltd
+INVOICE #INV-2024-0892
+
+From: CloudHost Pro Inc.
 Date: March 15, 2024
 
-2x Widget Pro - $49.99 each
-1x Cable Kit - $12.50
-Shipping: $8.00
+Bill To: Acme Corp
+         123 Business Ave, Suite 400
+         San Francisco, CA 94105
 
-Total: $120.48
+Description                    Qty    Unit Price    Total
+-------------------------------------------------------------
+Web Hosting (Annual Plan)        1     $599.00    $599.00
+SSL Certificate (Wildcard)       2      $89.00    $178.00
+Domain Registration (.com)       3      $12.99     $38.97
+Priority Support Upgrade         1     $199.00    $199.00
+-------------------------------------------------------------
+                              Subtotal:          $1,014.97
+                              Tax (8.5%):           $86.27
+                              TOTAL:             $1,101.24
+
+Payment Due: April 14, 2024
 """
 
-data = extract_invoice(invoice_text)
+data = extract_structured_data(invoice_text)
 print(json.dumps(data, indent=2))
+
+# Expected output:
+# {
+#   "vendor": "CloudHost Pro Inc.",
+#   "invoice_number": "INV-2024-0892",
+#   "date": "2024-03-15",
+#   "items": [
+#     {
+#       "description": "Web Hosting (Annual Plan)",
+#       "quantity": 1,
+#       "unit_price": 599.00,
+#       "total": 599.00
+#     },
+#     {
+#       "description": "SSL Certificate (Wildcard)",
+#       "quantity": 2,
+#       "unit_price": 89.00,
+#       "total": 178.00
+#     },
+#     {
+#       "description": "Domain Registration (.com)",
+#       "quantity": 3,
+#       "unit_price": 12.99,
+#       "total": 38.97
+#     },
+#     {
+#       "description": "Priority Support Upgrade",
+#       "quantity": 1,
+#       "unit_price": 199.00,
+#       "total": 199.00
+#     }
+#   ],
+#   "subtotal": 1014.97,
+#   "tax": 86.27,
+#   "total": 1101.24,
+#   "currency": "USD"
+# }
 ```
 
 ### Node.js
@@ -65,54 +176,119 @@ import OpenAI from "openai";
 
 const client = new OpenAI({ apiKey: "YOUR_API_KEY" });
 
-const SCHEMA = {
-  vendor: "string",
-  invoice_number: "string",
-  date: "YYYY-MM-DD",
-  line_items: [{ description: "string", quantity: "number", price: "number" }],
-  total: "number",
-};
+const INVOICE_SCHEMA = `{
+  "vendor": "string",
+  "invoice_number": "string",
+  "date": "YYYY-MM-DD",
+  "items": [{ "description": "string", "quantity": number, "unit_price": number, "total": number }],
+  "subtotal": number,
+  "tax": number,
+  "total": number,
+  "currency": "string (ISO 4217)"
+}`;
 
-async function extractInvoice(text) {
-  const response = await client.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      { role: "system", content: `Extract invoice data from the text. Return JSON matching this schema: ${JSON.stringify(SCHEMA)}. Return only valid JSON.` },
-      { role: "user", content: text },
-    ],
-    temperature: 0,
-  });
-  return JSON.parse(response.choices[0].message.content);
+/**
+ * Extract structured data from unstructured text.
+ * @param {string} text - The unstructured input.
+ * @param {string} schema - JSON schema describing desired output.
+ * @param {string} context - Description of the text type.
+ * @returns {Promise<Object|null>} Parsed structured data, or null on error.
+ */
+async function extractStructuredData(text, schema = INVOICE_SCHEMA, context = "an invoice") {
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: `Extract data from ${context} into this JSON structure:\n${schema}\n\nReturn only valid JSON. Use null for unknown fields. Normalize dates to YYYY-MM-DD.`,
+        },
+        { role: "user", content: text },
+      ],
+      temperature: 0,
+      max_tokens: 2000,
+    });
+
+    let raw = response.choices[0].message.content;
+    if (raw.startsWith("```")) {
+      raw = raw.split("\n").slice(1, -1).join("\n");
+    }
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error("Error:", error.message);
+    return null;
+  }
 }
 
-const data = await extractInvoice("Invoice #INV-2024-0042 From: Acme Supplies...");
-console.log(data);
+// --- Example usage ---
+
+const data = await extractStructuredData(
+  "Invoice #123 from Acme Corp, dated Jan 5 2024. 2x Widget at $50 each. Total: $100 + $8 tax = $108."
+);
+console.log(JSON.stringify(data, null, 2));
 ```
 
-### curl
+### Expected API Response
 
-```bash
-curl https://api.openai.com/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [
-      {"role": "system", "content": "Extract invoice data from the text. Return JSON with keys: vendor, invoice_number, date, line_items, total. Return only valid JSON."},
-      {"role": "user", "content": "Invoice #INV-2024-0042\nFrom: Acme Supplies Ltd\nDate: March 15, 2024\n2x Widget Pro - $49.99 each\nTotal: $120.48"}
-    ],
-    "temperature": 0
-  }'
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "{\"vendor\":\"CloudHost Pro Inc.\",\"invoice_number\":\"INV-2024-0892\",\"date\":\"2024-03-15\",\"items\":[{\"description\":\"Web Hosting (Annual Plan)\",\"quantity\":1,\"unit_price\":599.00,\"total\":599.00},{\"description\":\"SSL Certificate (Wildcard)\",\"quantity\":2,\"unit_price\":89.00,\"total\":178.00}],\"subtotal\":1014.97,\"tax\":86.27,\"total\":1101.24,\"currency\":\"USD\"}"
+      },
+      "finish_reason": "stop"
+    }
+  ]
+}
 ```
 
 ## How It Works
 
-1. Provide the exact JSON schema you want in the system prompt
-2. The model maps unstructured fields to your schema keys
-3. Temperature 0 ensures consistent, parseable output
+1. **Schema in the prompt**: the model sees the exact JSON shape you want, including field types and format rules
+2. **Explicit rules** (use null, normalize dates, use numbers) prevent the most common formatting issues
+3. **Temperature 0**: ensures the model sticks strictly to what's in the text
+4. **Post-processing**: strip markdown fences before parsing — models sometimes add them despite being told not to
+
+### Key Parameters
+
+| Parameter     | Value | Why                                                    |
+|---------------|-------|--------------------------------------------------------|
+| `temperature` | 0     | Extraction must be precise and deterministic           |
+| `max_tokens`  | 2000  | Complex documents produce large JSON objects           |
+| `model`       | gpt-4 | Best at following complex schemas accurately           |
+
+## Reusable Schema Library
+
+Define schemas once, reuse across your app:
+
+```python
+SCHEMAS = {
+    "invoice": INVOICE_SCHEMA,
+    "contact": '{"name": "string", "email": "string", "phone": "string", "company": "string"}',
+    "job_posting": '{"title": "string", "company": "string", "salary_range": "string", "location": "string", "requirements": ["string"]}',
+    "meeting_notes": '{"date": "YYYY-MM-DD", "attendees": ["string"], "agenda": ["string"], "action_items": [{"task": "string", "owner": "string", "due": "string"}]}',
+}
+
+# Use any schema:
+data = extract_structured_data(text, schema=SCHEMAS["contact"], context="an email signature")
+```
 
 ## Tips
 
-- Use GPT-4's JSON mode for guaranteed valid JSON: `response_format: { type: "json_object" }`
-- Add example output in the system prompt for complex schemas
-- Validate extracted data against your schema before saving — catch malformed responses
+- **JSON mode**: on GPT-4, use `response_format: { type: "json_object" }` to guarantee valid JSON output (no need for manual fence stripping)
+- **Validation**: always validate the parsed output against your expected schema — check for required fields, correct types, reasonable values
+- **Math verification**: for invoices, verify that `quantity × unit_price = total` and items sum to subtotal — LLMs sometimes copy numbers wrong
+- **Fallback values**: use `null` rather than empty strings for missing fields — it's cleaner to check `if field is not None`
+- **Batch processing**: for many similar documents, process in batches of 5–10 per API call to reduce overhead
+
+## Common Pitfalls
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Invalid JSON | Model adds explanation text | Use JSON mode, or strip markdown fences |
+| Numbers as strings | Schema unclear | Specify "use numbers (not strings) for numeric fields" |
+| Wrong date format | Ambiguous dates like "03/04/2024" | Specify "Normalize to YYYY-MM-DD" and note locale |
+| Missing items in lists | Complex or long document | Process sections individually |
+| Math doesn't add up | Model copies numbers incorrectly | Validate arithmetic in post-processing |
