@@ -31,7 +31,8 @@ export default function SearchFilter({
   models = [],
   onClear = () => {},
 }) {
-  const hasActiveFilters = search || selectedCategory || selectedDifficulty || selectedModel;
+  const hasActiveFilters =
+    search || selectedCategory || selectedDifficulty || selectedModel;
 
   return (
     <div className="mb-8 rounded-lg border bg-gray-50 px-4 py-4 flex flex-wrap items-center gap-3">
@@ -90,7 +91,7 @@ export default function SearchFilter({
       {hasActiveFilters && (
         <button
           onClick={onClear}
-          className="ml-auto rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-500 shadow-sm hover:text-gray-900 hover:border-gray-400 transition"
+          className="ml-auto rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-500 shadow-sm hover:text-gray-900 hover:bg-red-300 transition"
         >
           Clear filters
         </button>
